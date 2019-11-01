@@ -208,13 +208,6 @@ public class SimInfo {
 		return new SimDataSource(c).getAll();
 	}
 
-//	public static boolean exists(String hnis, Context c) {
-//		return Utils.getSharedPrefs(c).getString(KEY + ICCID + hnis, null) != null;
-//	}
-//	public static boolean simPresent(String mSimId, Context c) {
-//		return SimInfo.getSlotIdx(mSimId, c) != -1;
-//	}
-
 	String setStandardIccId(String iccId) {
 		if (iccId != null)
 			iccId = iccId.replaceAll("[a-zA-Z]", "");
