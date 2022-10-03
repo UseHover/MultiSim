@@ -16,7 +16,7 @@ public class Utils {
 		try {
 			return c.getApplicationContext().getPackageName();
 		} catch (NullPointerException e) {
-			Sentry.capture(e);
+			Sentry.captureException(e);
 			return "fail";
 		}
 	}

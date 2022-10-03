@@ -40,7 +40,7 @@ final public class SimDataSource extends DataSource {
 			}
 			cursor.close();
 			close();
-		} catch (Exception e) { Sentry.capture(e); }
+		} catch (Exception e) { Sentry.captureException(e); }
 		return infos;
 	}
 

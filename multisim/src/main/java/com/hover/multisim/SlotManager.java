@@ -1,14 +1,14 @@
 package com.hover.multisim;
 
+import static android.telephony.TelephonyManager.SIM_STATE_READY;
+import static android.telephony.TelephonyManager.SIM_STATE_UNKNOWN;
+
 import android.util.Log;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import io.sentry.Sentry;
-
-import static android.telephony.TelephonyManager.SIM_STATE_READY;
-import static android.telephony.TelephonyManager.SIM_STATE_UNKNOWN;
 
 final class SlotManager {
 	public final static String TAG = "SlotManager";
@@ -62,7 +62,7 @@ final class SlotManager {
 			try {
 				if (mgr != null && imei.equals(mgr.imei) && teleMgr == mgr.teleMgr && teleClass == mgr.teleClass)
 					return false;
-			} catch (NullPointerException e) { Log.w(TAG, "something was null that shouldn't be", e); Sentry.capture(e); }
+			} catch (NullPointerException e) { Log.w(TAG, "something was null that shouldn't be", e); Sentry.captureException(e); }
 		}
 //		Log.i(TAG, "Slot Manager was unique with Imei: " + imei + ", teleMgr: " + teleMgr + ", and teleClass: " + teleClass);
 		return true;
