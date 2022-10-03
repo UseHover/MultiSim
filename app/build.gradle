@@ -3,7 +3,7 @@ apply plugin: 'org.jetbrains.kotlin.android'
 
 android {
 
-//    namespace 'com.hover.app'
+    namespace 'com.hover.app'
     compileSdkVersion 33
 
     defaultConfig {
