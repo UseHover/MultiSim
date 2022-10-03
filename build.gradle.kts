@@ -3,11 +3,18 @@
 plugins {
     id("com.android.application") version "7.3.0" apply false
     id("com.android.library") version "7.3.0" apply false
-    id("org.jetbrains.kotlin.android") version "1.7.10" apply false
+    id("org.jetbrains.kotlin.android") version "1.7.0" apply false
+    id("com.google.devtools.ksp") version "1.7.0-1.0.6" apply true
     id("org.jlleitschuh.gradle.ktlint") version "10.2.0"
     id("io.gitlab.arturbosch.detekt") version "1.18.0-RC2"
     id("com.diffplug.spotless") version "6.0.0"
     id("org.jetbrains.dokka") version "1.4.20"
+}
+
+buildscript {
+    dependencies {
+        classpath("com.google.dagger:hilt-android-gradle-plugin:2.42")
+    }
 }
 
 allprojects {
