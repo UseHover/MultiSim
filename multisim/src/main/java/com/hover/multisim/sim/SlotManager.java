@@ -1,4 +1,4 @@
-package com.hover.multisim;
+package com.hover.multisim.sim;
 
 import static android.telephony.TelephonyManager.SIM_STATE_READY;
 import static android.telephony.TelephonyManager.SIM_STATE_UNKNOWN;

@@ -1,4 +1,4 @@
-package com.hover.multisim;
+package com.hover.multisim.sim;
 
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
@@ -24,6 +24,7 @@ import androidx.work.WorkerParameters;
 import androidx.work.impl.utils.futures.SettableFuture;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import com.hover.multisim.SlotManager;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;

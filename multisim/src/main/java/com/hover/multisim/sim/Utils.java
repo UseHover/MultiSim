@@ -1,4 +1,4 @@
-package com.hover.multisim;
+package com.hover.multisim.sim;
 
 import android.Manifest;
 import android.content.Context;

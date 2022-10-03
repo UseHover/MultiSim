@@ -24,5 +24,14 @@ import kotlinx.coroutines.flow.Flow
 interface SimDao : BaseDao<HSDKSims> {
 
     @Query("SELECT * FROM hsdk_sims")
-    fun getAll(): Flow<List<HSDKSims>>
+    fun getAll(): Flow<List<HSDKSims>> // return SimInfo
+
+    @Query("SELECT * FROM hsdk_sims WHERE mcc =:mcc AND slot_idx != -1")
+    fun getPresent(mcc: String): Flow<List<HSDKSims>> // return SimInfo
+
+    @Query("SELECT * FROM hsdk_sims WHERE slot_idx =:slotIdx LIMIT 1")
+    suspend fun get(slotIdx: Int): HSDKSims // return SimInfo
+
+    @Query("SELECT * FROM hsdk_sims WHERE iccId =:iccId LIMIT 1")
+    suspend fun loadBy(iccId: String): HSDKSims // return SimInfo
 }
