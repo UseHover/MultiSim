@@ -1,2 +1,4 @@
 include ':app'
+include ':multisim'
+
 rootProject.name='MultiSim'
