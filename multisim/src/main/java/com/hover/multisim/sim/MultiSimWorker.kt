@@ -16,7 +16,6 @@ import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkerParameters
 import androidx.work.impl.utils.futures.SettableFuture
 import com.google.common.util.concurrent.ListenableFuture
-import com.hover.multisim.sim.MultiSimWorker
 import com.hover.multisim.sim.SlotManager.Companion.addValidReadySlots
 import com.hover.multisim.sim.Utils.getPackage
 import com.hover.multisim.sim.Utils.hasPhonePerm
@@ -49,7 +48,11 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
     override fun startWork(): ListenableFuture<Result> {
         android.util.Log.v(TAG, "Starting new Multi SIM worker")
         workerFuture = SettableFuture.create()
-        if (hasPhonePerm(applicationContext)) startListeners() else workerFuture.set(Result.failure())
+        if (hasPhonePerm(applicationContext)) {
+            startListeners()
+        } else {
+            workerFuture.set(Result.failure())
+        }
         return workerFuture
     }
 
@@ -57,7 +60,9 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
     private fun startListeners() {
         try {
             registerSimStateReceiver()
-            if (simStateListener == null) simStateListener = SimStateListener()
+            if (simStateListener == null) {
+                simStateListener = SimStateListener()
+            }
             // TelephonyManager.listen() must take place on the main thread
             (applicationContext.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager).listen(
                 simStateListener,
@@ -122,8 +127,10 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
             var oldList: ArrayList<SimInfo>? = null
             for (i in 0 until SLOT_COUNT) {
                 val si: SimInfo = SimDataSource(applicationContext).get(i)
-                if (oldList == null) oldList = ArrayList()
-                oldList.add(si)
+                if (oldList == null) {
+                    oldList = ArrayList()
+                    oldList.add(si)
+                }
             }
             android.util.Log.v(TAG, "Loaded old list from db. Size: " + (oldList?.size ?: "null"))
             return oldList
@@ -157,7 +164,9 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
 
     private fun findPhysicalSim(newList: List<SimInfo?>, savedSim: SimInfo): Boolean {
         for (si in newList) {
-            if (si!!.isSameSim(savedSim)) return true
+            if (si!!.isSameSim(savedSim)){
+                return true
+            }
         }
         return false
     }
@@ -453,7 +462,5 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
         fun action(c: Context?): String {
             return getPackage(c!!) + "." + NEW_SIM_INFO
         }
-
-        private fun log(message: String?) {}
     }
 }
