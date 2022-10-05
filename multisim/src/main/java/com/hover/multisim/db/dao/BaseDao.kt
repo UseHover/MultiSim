@@ -33,9 +33,6 @@ interface BaseDao<T> {
     suspend fun insert(item: T): Long
 
     @Insert(onConflict = REPLACE)
-    suspend fun insert(vararg items: T)
-
-    @Insert(onConflict = REPLACE)
     suspend fun insert(items: List<T>)
 
     @Update(onConflict = REPLACE)
