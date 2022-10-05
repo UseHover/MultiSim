@@ -1,0 +1,30 @@
+name: Build and test
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Bundle install
+        run: bundle install
+
+      - name: Static check
+        run: bundle exec fastlane staticCheck
+
+      - name: Unit tests
+        run: bundle exec fastlane unitTest
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: junit_test_report_${{ env.GITHUB_REF }}_${{ env.GITHUB_RUN_ID }}
+          path: multisim/build/reports/tests
