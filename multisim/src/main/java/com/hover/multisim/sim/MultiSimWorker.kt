@@ -21,7 +21,6 @@ import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkerParameters
 import androidx.work.impl.utils.futures.SettableFuture
 import com.google.common.util.concurrent.ListenableFuture
-import com.hover.multisim.sim.MultiSimWorkerfff.Companion.action
 import io.sentry.Sentry
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
@@ -64,7 +63,6 @@ class MultiSimWorker(
 
     @SuppressLint("RestrictedApi")
     override fun startWork(): ListenableFuture<Result> {
-        Log.v(MultiSimWorkerfff.TAG, "Starting new Multi SIM worker")
         workerFuture = SettableFuture.create()
         if (Utils.hasPhonePerm(applicationContext)) {
             startListeners()
@@ -86,7 +84,7 @@ class MultiSimWorker(
                     PhoneStateListener.LISTEN_SERVICE_STATE or PhoneStateListener.LISTEN_SIGNAL_STRENGTHS
                 )
         } catch (e: java.lang.Exception) {
-            workerFuture!!.set(Result.retry())
+            workerFuture.set(Result.retry())
         }
     }
 
@@ -111,7 +109,7 @@ class MultiSimWorker(
                 simSemaphore.release()
                 // Give the listeners a chance to receive a few events - sometimes the first trigger isn't the needed info. 5s is long but this is a background thread anyway and the info has already been updated in the DB
                 SystemClock.sleep(5000)
-                if (!workerFuture!!.isDone) {
+                if (!workerFuture.isDone) {
                     workerFuture.set(result)
                 }
             }
@@ -327,7 +325,7 @@ class MultiSimWorker(
         return runMethodReflect(actualInstance, actualInstance.javaClass, methodName, methodParams)
     }
 
-    fun runMethodReflect(
+    private fun runMethodReflect(
         actualInstance: Any?,
         classInstance: Class<*>,
         methodName: String,
@@ -403,10 +401,6 @@ class MultiSimWorker(
         override fun onReceive(context: Context, intent: Intent) {
             updateSimInfo()
         }
-    }
-
-    fun action(c: Context?): String {
-        return Utils.getPackage(c!!) + "." + NEW_SIM_INFO
     }
 
     override fun onStopped() {

@@ -95,7 +95,7 @@ class SlotManager(
         )
     }
 
-    fun addValidReadySlots(
+    private fun addValidReadySlots(
         slotMgrList: List<SlotManager>,
         slotIdx: Int,
         subscriptionId: Int,
@@ -184,7 +184,7 @@ class SlotManager(
         if (methodName == null || methodName.isEmpty()) return null
         var result: Any?
         for (methodSuffix in METHOD_SUFFIXES) {
-            result = MultiSimWorkerfff.runMethodReflect(
+            result = MultiSimWorker.runMethodReflect(
                 teleMgr,
                 teleClass,
                 methodName + methodSuffix,
