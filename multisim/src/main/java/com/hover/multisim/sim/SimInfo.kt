@@ -6,12 +6,16 @@ import android.content.Context
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
 import android.util.Log
+import com.hover.multisim.db.dao.SimDao
 import io.sentry.Sentry
 import org.json.JSONArray
 import org.json.JSONException
 import java.util.*
+import javax.inject.Inject
 
-open class SimInfo {
+open class SimInfo @Inject constructor(
+    val simDao: SimDao
+) {
     /**
      * The slot that the SIM is in, starting from 0. Can be -1 if the SIM has been removed
      */
@@ -100,8 +104,6 @@ open class SimInfo {
         networkCountryIso = slotMgr.findNetworkCountryIso()
         networkType = setNetworkType(slotMgr.findNetworkType())
         isRoaming = setNetworkRoaming(slotMgr.findNetworkRoaming())
-
-//		Log.i(TAG, "Created SIM representation using reflection: " + this.log());
     }
 
     @TargetApi(22)
@@ -147,18 +149,13 @@ open class SimInfo {
     }
 
     fun save(c: Context) {
-        SimDataSource(c).saveToDb(this)
+        simDao.insert(this)
         updateSubId(subscriptionId, c)
     }
 
-    //	private void updateSlot(Context c) {
-    //		Log.i(TAG, "Updating sim slot to: " + slotIdx);
-    //		new SimDataSource(c).updateSlot(this, updatedInfo);
-    //		updateSubId(updatedInfo.subscriptionId, c);
-    //	}
     fun setSimRemoved(c: Context?) {
         Log.i(TAG, "Updating sim slot to: -1")
-        SimDataSource(c).remove(this)
+        simDao.delete(this)
     }
 
     @SuppressLint("ApplySharedPref")
@@ -179,9 +176,9 @@ open class SimInfo {
     }
 
     fun isMncMatch(mncInt: Int): Boolean {
-        return imsi!!.length == 4 && Integer.valueOf(imsi!!.substring(3)) == mncInt ||
-                imsi!!.length >= 5 && Integer.valueOf(imsi!!.substring(3, 5)) == mncInt ||
-                imsi!!.length >= 6 && Integer.valueOf(imsi!!.substring(3, 6)) == mncInt
+        return imsi!!.length == 4 && Integer.valueOf(imsi!!.substring(3)) == mncInt || imsi!!.length >= 5 && Integer.valueOf(
+            imsi!!.substring(3, 5)
+        ) == mncInt || imsi!!.length >= 6 && Integer.valueOf(imsi!!.substring(3, 6)) == mncInt
     }
 
     fun getInterpretedHni(actionHniList: JSONArray): String? {
@@ -195,11 +192,11 @@ open class SimInfo {
     }
 
     private fun setSimState(simState: Int): Int {
-        return simState ?: -1
+        return simState
     }
 
     private fun setNetworkType(networkType: Int): Int {
-        return networkType ?: 0
+        return networkType
     }
 
     private fun setNetworkRoaming(networkRoaming: Boolean?): Boolean {
@@ -207,20 +204,7 @@ open class SimInfo {
     }
 
     fun log(): String {
-        return "slotIdx=[" + slotIdx +
-                "] subscriptionId=[" + subscriptionId +
-                "] imei=[" + imei +
-                "] imsi=[" + imsi +
-                "] simState=[" + simState +
-                "] simIccId=[" + iccId +
-                "] simHni=[" + oSReportedHni +
-                "] simOperatorName=[" + operatorName +
-                "] simCountryIso=[" + countryIso +
-                "] networkOperator=[" + networkOperator +
-                "] networkOperatorName=[" + networkOperatorName +
-                "] networkCountryIso=[" + networkCountryIso +
-                "] networkType=[" + networkType +
-                "] networkRoaming=[" + isRoaming + "]"
+        return "slotIdx=[$slotIdx] subscriptionId=[$subscriptionId] imei=[$imei] imsi=[$imsi] simState=[$simState] simIccId=[$iccId] simHni=[$oSReportedHni] simOperatorName=[$operatorName] simCountryIso=[$countryIso] networkOperator=[$networkOperator] networkOperatorName=[$networkOperatorName] networkCountryIso=[$networkCountryIso] networkType=[$networkType] networkRoaming=[$isRoaming]"
     }
 
     override fun toString(): String {

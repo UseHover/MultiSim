@@ -9,6 +9,7 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.SystemClock
 import android.telephony.*
+import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.work.ListenableWorker
 import androidx.work.OneTimeWorkRequest
@@ -16,6 +17,7 @@ import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkerParameters
 import androidx.work.impl.utils.futures.SettableFuture
 import com.google.common.util.concurrent.ListenableFuture
+import com.hover.multisim.db.dao.SimDao
 import com.hover.multisim.sim.SlotManager.Companion.addValidReadySlots
 import com.hover.multisim.sim.Utils.getPackage
 import com.hover.multisim.sim.Utils.hasPhonePerm
@@ -23,8 +25,13 @@ import io.sentry.Sentry
 import java.util.*
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import javax.inject.Inject
 
-class MultiSimWorker(context: Context, params: WorkerParameters) :
+class MultiSimWorker @Inject constructor(
+    context: Context,
+    params: WorkerParameters,
+    private val simDao: SimDao
+) :
     ListenableWorker(context, params) {
 
     private lateinit var workerFuture: SettableFuture<Result>
@@ -90,7 +97,7 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
                     }
                 } else Result.failure()
             } catch (e: Exception) {
-                android.util.Log.w(TAG, "threw while attempting to update sim list", e)
+                Log.w(TAG, "threw while attempting to update sim list", e)
                 Sentry.captureException(e)
                 Result.failure()
             } finally {
@@ -126,7 +133,7 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
         get() {
             var oldList: ArrayList<SimInfo>? = null
             for (i in 0 until SLOT_COUNT) {
-                val si: SimInfo = SimDataSource(applicationContext).get(i)
+                val si: SimInfo = simDao.get(i)
                 if (oldList == null) {
                     oldList = ArrayList()
                     oldList.add(si)
@@ -150,13 +157,13 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
 
     private fun updateDb(newList: List<SimInfo?>) {
         for (si in newList) {
-            android.util.Log.i(TAG, "Saving SIM in slot " + si!!.slotIdx + ": " + si.toString())
+            Log.i(TAG, "Saving SIM in slot " + si!!.slotIdx + ": " + si.toString())
             si.save(applicationContext)
         }
-        val dbInfos: List<SimInfo> = SimDataSource(applicationContext).getAll()
+        val dbInfos: List<SimInfo> = simDao.getAll()
         for (dbSi in dbInfos) {
             if (!findPhysicalSim(newList, dbSi)) {
-                android.util.Log.i(TAG, "Couldn't find SIM: $dbSi, removing")
+                Log.i(TAG, "Couldn't find SIM: $dbSi, removing")
                 dbSi.setSimRemoved(applicationContext)
             }
         }
@@ -164,7 +171,7 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
 
     private fun findPhysicalSim(newList: List<SimInfo?>, savedSim: SimInfo): Boolean {
         for (si in newList) {
-            if (si!!.isSameSim(savedSim)){
+            if (si!!.isSameSim(savedSim)) {
                 return true
             }
         }
@@ -185,7 +192,7 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
                 subInfos, slotMgrList
             ) else createUniqueSimInfoList(slotMgrList)
         } catch (e: Exception) {
-            android.util.Log.w(TAG, "Multi-SIM worker caught something", e)
+            Log.w(TAG, "Multi-SIM worker caught something", e)
             Sentry.captureException(e)
         } finally {
             slotSemaphore.release()
@@ -215,6 +222,7 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
         return uniqueSimInfos
     }
 
+    @SuppressLint("MissingPermission")
     @TargetApi(22)
     @Throws(Exception::class)
     private fun getSubscriptions(
@@ -225,7 +233,7 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
             for (teleMgr in teleMgrInstances) {
                 if (subInfos != null) {
                     for (subinfo in subInfos) addValidReadySlots(
-                        slotMgrList,
+                        slotMgrList.toMutableList(),
                         subinfo.simSlotIndex,
                         subinfo.subscriptionId,
                         teleMgr,
@@ -267,9 +275,9 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
         val result = runMethodReflect(className, "getDefault", slotIdx?.let { arrayOf(it) })
         if (result != null && !teleMgrList.contains(result)) {
             teleMgrList.add(result)
-            Log("Added Mgr using className: $className, method: getDefault, and param: $slotIdx")
+            Log.d("", "Added Mgr using className: $className, method: getDefault, and param: $slotIdx")
             if (Build.VERSION.SDK_INT < 22) addValidReadySlots(
-                slotMgrList, slotIdx, result, validClassNames
+                slotMgrList.toMutableList(), slotIdx, result, validClassNames
             )
         }
     }
@@ -283,9 +291,9 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
         val serv = applicationContext.getSystemService(serviceName)
         if (serv != null && !teleMgrList.contains(serv)) {
             teleMgrList.add(serv)
-            Log("Added Mgr using mContext.getSystemService('$serviceName')")
+            Log.d("", "Added Mgr using mContext.getSystemService('$serviceName')")
             if (Build.VERSION.SDK_INT < 22) addValidReadySlots(
-                slotMgrList, slotIdx, serv, validClassNames
+                slotMgrList.toMutableList(), slotIdx, serv, validClassNames
             )
         }
     }
@@ -321,7 +329,7 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
 
     private inner class SimStateReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent != null) updateSimInfo()
+            updateSimInfo()
         }
     }
 
@@ -351,28 +359,22 @@ class MultiSimWorker(context: Context, params: WorkerParameters) :
     }
 
     private fun printAllMethodsAndFields(className: String, paramsCount: Int) {
-        Log("====================================================================================")
-        Log("Methods of $className")
         try {
-            val MultiSimClass = Class.forName(className)
-            for (method in MultiSimClass.methods) {
-                Log(method.toGenericString())
+            val multiSimClass = Class.forName(className)
+            for (method in multiSimClass.methods) {
+                Log.d("", method.toGenericString())
                 try {
-                    if (method.parameterTypes.isEmpty()) Log(
-                        runMethodReflect(
-                            MultiSimClass, method.name, null
-                        ) as String?
-                    ) else if (method.parameterTypes.size == 1) Log(
-                        " " + runMethodReflect(
-                            MultiSimClass, method.name, arrayOf(0)
-                        )
-                    )
+                    if (method.parameterTypes.isEmpty()) {
+                        Log.d("", (runMethodReflect(multiSimClass, method.name, null) as String?).toString())
+                    } else if (method.parameterTypes.size == 1) {
+                        Log.d(" ",  runMethodReflect(multiSimClass, method.name, arrayOf(0)).toString())
+                    }
                 } catch (e: Exception) {
-                    Log("Failed. $e")
+                    Log.e("Failed", e.localizedMessage.toString())
                 }
             }
         } catch (e: Exception) {
-            Log("Failed. $e")
+            Log.e("Failed", e.localizedMessage.toString())
         }
     }
 

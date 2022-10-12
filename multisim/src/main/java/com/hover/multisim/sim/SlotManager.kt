@@ -22,8 +22,8 @@ private constructor(
         return getValue(methodName, subscriptionId as Int, teleMgr, teleClass)
     }
 
-    fun findSimState(): Int? {
-        return getValue("getSimState", slotIndex) as Int?
+    fun findSimState(): Int {
+        return getValue("getSimState", slotIndex) as Int
     }
 
     fun findIccId(): String? {
@@ -58,8 +58,8 @@ private constructor(
         return getValue("getNetworkCountryIso", subscriptionId) as String?
     }
 
-    fun findNetworkType(): Int? {
-        return getValue("getNetworkType", subscriptionId) as Int?
+    fun findNetworkType(): Int{
+        return getValue("getNetworkType", subscriptionId) as Int
     }
 
     fun findNetworkRoaming(): Boolean {
