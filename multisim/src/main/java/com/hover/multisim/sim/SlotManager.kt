@@ -184,7 +184,7 @@ class SlotManager(
         if (methodName == null || methodName.isEmpty()) return null
         var result: Any?
         for (methodSuffix in METHOD_SUFFIXES) {
-            result = MultiSimWorker.runMethodReflect(
+            result = MultiSimWorkerfff.runMethodReflect(
                 teleMgr,
                 teleClass,
                 methodName + methodSuffix,

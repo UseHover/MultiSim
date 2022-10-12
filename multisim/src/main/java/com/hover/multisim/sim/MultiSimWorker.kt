@@ -8,7 +8,11 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.SystemClock
-import android.telephony.*
+import android.telephony.PhoneStateListener
+import android.telephony.ServiceState
+import android.telephony.SubscriptionInfo
+import android.telephony.SubscriptionManager
+import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.work.ListenableWorker
@@ -17,30 +21,29 @@ import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkerParameters
 import androidx.work.impl.utils.futures.SettableFuture
 import com.google.common.util.concurrent.ListenableFuture
-import com.hover.multisim.db.dao.SimDao
-import com.hover.multisim.sim.SlotManager.Companion.addValidReadySlots
-import com.hover.multisim.sim.Utils.getPackage
-import com.hover.multisim.sim.Utils.hasPhonePerm
+import com.hover.multisim.sim.MultiSimWorkerfff.Companion.action
 import io.sentry.Sentry
-import java.util.*
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
-import javax.inject.Inject
 
-class MultiSimWorker @Inject constructor(
+class MultiSimWorker(
     context: Context,
     params: WorkerParameters,
-    private val simDao: SimDao
-) :
-    ListenableWorker(context, params) {
+) : ListenableWorker(context, params) {
+
+    private val NEW_SIM_INFO = "NEW_SIM_INFO_ACTION"
+    val SLOT_COUNT = 3 // Need to check 0, 1, and 2. Some phones index from 1.
 
     private lateinit var workerFuture: SettableFuture<Result>
     private var result: Result? = null
+
     private val slotSemaphore = Semaphore(1, true)
     private val simSemaphore = Semaphore(1, true)
+
     private var simStateReceiver: SimStateReceiver? = null
     private var simStateListener: SimStateListener? = null
-    private var validClassNames: ArrayList<String?>? = null
+    private var validClassNames: ArrayList<String>? = null
+
     private val POSS_CLASS_NAMES = arrayOf(
         null,
         "android.telephony.TelephonyManager",
@@ -51,11 +54,19 @@ class MultiSimWorker @Inject constructor(
         "com.android.internal.telephony.PhoneFactory"
     )
 
+    fun makeToil(): PeriodicWorkRequest {
+        return PeriodicWorkRequest.Builder(MultiSimWorker::class.java, 15, TimeUnit.MINUTES).build()
+    }
+
+    fun makeWork(): OneTimeWorkRequest {
+        return OneTimeWorkRequest.Builder(MultiSimWorker::class.java).build()
+    }
+
     @SuppressLint("RestrictedApi")
     override fun startWork(): ListenableFuture<Result> {
-        android.util.Log.v(TAG, "Starting new Multi SIM worker")
+        Log.v(MultiSimWorkerfff.TAG, "Starting new Multi SIM worker")
         workerFuture = SettableFuture.create()
-        if (hasPhonePerm(applicationContext)) {
+        if (Utils.hasPhonePerm(applicationContext)) {
             startListeners()
         } else {
             workerFuture.set(Result.failure())
@@ -67,17 +78,15 @@ class MultiSimWorker @Inject constructor(
     private fun startListeners() {
         try {
             registerSimStateReceiver()
-            if (simStateListener == null) {
-                simStateListener = SimStateListener()
-            }
+            if (simStateListener == null) simStateListener = SimStateListener()
             // TelephonyManager.listen() must take place on the main thread
-            (applicationContext.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager).listen(
-                simStateListener,
-                PhoneStateListener.LISTEN_SERVICE_STATE or PhoneStateListener.LISTEN_SIGNAL_STRENGTHS
-            )
-        } catch (e: Exception) {
-            android.util.Log.d(TAG, "Failed to start SIM listeners, setting retry", e)
-            workerFuture.set(Result.retry())
+            (applicationContext.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager)
+                .listen(
+                    simStateListener,
+                    PhoneStateListener.LISTEN_SERVICE_STATE or PhoneStateListener.LISTEN_SIGNAL_STRENGTHS
+                )
+        } catch (e: java.lang.Exception) {
+            workerFuture!!.set(Result.retry())
         }
     }
 
@@ -87,112 +96,96 @@ class MultiSimWorker @Inject constructor(
         backgroundExecutor.execute {
             result = try {
                 simSemaphore.acquire()
-                if (hasPhonePerm(applicationContext)) {
-                    android.util.Log.v(TAG, "reviewing sim info")
-                    val oldList: List<SimInfo>? = saved
+                if (Utils.hasPhonePerm(applicationContext)) {
+                    val oldList: List<SimInfo?>? = getSaved()
                     val newList = findUniqueSimInfo()
-                    run {
+                    if (newList != null) {
                         compareNewAndOld(newList, oldList)
                         Result.success()
-                    }
+                    } else Result.failure()
                 } else Result.failure()
-            } catch (e: Exception) {
-                Log.w(TAG, "threw while attempting to update sim list", e)
+            } catch (e: java.lang.Exception) {
                 Sentry.captureException(e)
                 Result.failure()
             } finally {
                 simSemaphore.release()
                 // Give the listeners a chance to receive a few events - sometimes the first trigger isn't the needed info. 5s is long but this is a background thread anyway and the info has already been updated in the DB
                 SystemClock.sleep(5000)
-                if (!workerFuture.isDone) {
-                    android.util.Log.v(TAG, "Finishing Multi SIM worker")
+                if (!workerFuture!!.isDone) {
                     workerFuture.set(result)
                 }
             }
         }
     }
 
-    private fun compareNewAndOld(newList: List<SimInfo?>, oldList: List<SimInfo>?) {
+    private fun compareNewAndOld(newList: List<SimInfo?>, oldList: List<SimInfo?>?) {
         if (oldList == null || oldList.size != newList.size) {
-            android.util.Log.v(
-                TAG,
-                "no old list or sizes differ. Old: " + (oldList?.size
-                    ?: "null") + ", new: " + newList.size
-            )
             onSimInfoUpdate(newList)
         } else {
-            for (i in newList.indices) if (newList[i]!!.isNotContainedInOrHasMoved(oldList)) {
-                android.util.Log.v(TAG, "some sim moved")
+            for (i in newList.indices) if (newList[i].isNotContainedInOrHasMoved(oldList)) {
                 onSimInfoUpdate(newList)
                 break
             }
         }
     }
 
-    private val saved: ArrayList<SimInfo>?
-        get() {
-            var oldList: ArrayList<SimInfo>? = null
-            for (i in 0 until SLOT_COUNT) {
-                val si: SimInfo = simDao.get(i)
-                if (oldList == null) {
-                    oldList = ArrayList()
-                    oldList.add(si)
-                }
-            }
-            android.util.Log.v(TAG, "Loaded old list from db. Size: " + (oldList?.size ?: "null"))
-            return oldList
+    private fun getSaved(): java.util.ArrayList<SimInfo?>? {
+        var oldList: java.util.ArrayList<SimInfo?>? = null
+        for (i in 0 until SLOT_COUNT) {
+            val si: SimInfo = SimDataSource(applicationContext).get(i)
+            if (oldList == null) oldList = java.util.ArrayList()
+            oldList.add(si)
         }
+        return oldList
+    }
 
-    private fun onSimInfoUpdate(newList: List<SimInfo?>) {
+    private fun onSimInfoUpdate(newList: List<SimInfo>) {
         updateDb(newList)
-        android.util.Log.v(TAG, "Saved. Firing broadcast")
         LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(
             Intent(
-                action(
+                MultiSimWorker.action(
                     applicationContext
                 )
             )
         )
     }
 
-    private fun updateDb(newList: List<SimInfo?>) {
+    private fun updateDb(newList: List<SimInfo>) {
         for (si in newList) {
-            Log.i(TAG, "Saving SIM in slot " + si!!.slotIdx + ": " + si.toString())
             si.save(applicationContext)
         }
-        val dbInfos: List<SimInfo> = simDao.getAll()
+        val dbInfos: List<SimInfo> = SimDataSource(applicationContext).getAll()
         for (dbSi in dbInfos) {
             if (!findPhysicalSim(newList, dbSi)) {
-                Log.i(TAG, "Couldn't find SIM: $dbSi, removing")
                 dbSi.setSimRemoved(applicationContext)
             }
         }
     }
 
-    private fun findPhysicalSim(newList: List<SimInfo?>, savedSim: SimInfo): Boolean {
+    private fun findPhysicalSim(newList: List<SimInfo>, savedSim: SimInfo): Boolean {
         for (si in newList) {
-            if (si!!.isSameSim(savedSim)) {
-                return true
-            }
+            if (si.isSameSim(savedSim)) return true
         }
         return false
     }
 
     @Synchronized
-    private fun findUniqueSimInfo(): List<SimInfo?> {
-        var newList: List<SimInfo?> = ArrayList()
+    @SuppressWarnings("MissingPermission")
+    private fun findUniqueSimInfo(): List<SimInfo?>? {
+        var newList: List<SimInfo?> = java.util.ArrayList()
         try {
             slotSemaphore.acquire()
-            val slotMgrList: List<SlotManager?> = ArrayList()
+            val slotMgrList: List<SlotManager> = java.util.ArrayList()
             val teleMgrInstances = listTeleMgrs(slotMgrList)
-            var subInfos: List<SubscriptionInfo>? = ArrayList()
+            var subInfos: List<SubscriptionInfo?>? = java.util.ArrayList()
             if (Build.VERSION.SDK_INT >= 22) subInfos =
                 getSubscriptions(teleMgrInstances, slotMgrList)
-            newList = if (subInfos != null && subInfos.isNotEmpty()) createUniqueSimInfoList(
-                subInfos, slotMgrList
-            ) else createUniqueSimInfoList(slotMgrList)
-        } catch (e: Exception) {
-            Log.w(TAG, "Multi-SIM worker caught something", e)
+            newList =
+                if (subInfos != null && subInfos.isNotEmpty()) createUniqueSimInfoList(
+                    subInfos,
+                    slotMgrList
+                ) else createUniqueSimInfoList(slotMgrList)
+        } catch (e: java.lang.Exception) {
             Sentry.captureException(e)
         } finally {
             slotSemaphore.release()
@@ -201,39 +194,42 @@ class MultiSimWorker @Inject constructor(
     }
 
     private fun createUniqueSimInfoList(
-        subInfos: List<SubscriptionInfo>, slotMgrList: List<SlotManager?>
-    ): List<SimInfo?> {
+        subInfos: List<SubscriptionInfo>,
+        slotMgrList: List<SlotManager>
+    ): List<SimInfo> {
         val newList = createUniqueSimInfoList(slotMgrList)
         for (subInfo in subInfos) newList.add(SimInfo(subInfo, applicationContext))
         return removeDuplicates(newList)
     }
 
-    private fun createUniqueSimInfoList(slotMgrList: List<SlotManager?>): MutableList<SimInfo?> {
-        val newList: MutableList<SimInfo?> = ArrayList()
-        for (sm in slotMgrList) newList.add(sm!!.createSimInfo())
+    private fun createUniqueSimInfoList(slotMgrList: List<SlotManager>): MutableList<SimInfo> {
+        val newList: MutableList<SimInfo> = java.util.ArrayList()
+        for (sm in slotMgrList) newList.add(sm.createSimInfo())
         return removeDuplicates(newList)
     }
 
-    private fun removeDuplicates(simInfos: List<SimInfo?>): MutableList<SimInfo?> {
-        val uniqueSimInfos: MutableList<SimInfo?> = ArrayList()
-        for (simInfo in simInfos) if (simInfo!!.isNotContainedIn(uniqueSimInfos)) uniqueSimInfos.add(
+    private fun removeDuplicates(simInfos: List<SimInfo>): MutableList<SimInfo> {
+        val uniqueSimInfos: MutableList<SimInfo> = java.util.ArrayList()
+        for (simInfo in simInfos) if (simInfo.isNotContainedIn(uniqueSimInfos)) uniqueSimInfos.add(
             simInfo
         )
         return uniqueSimInfos
     }
 
-    @SuppressLint("MissingPermission")
     @TargetApi(22)
-    @Throws(Exception::class)
+    @SuppressWarnings("MissingPermission")
     private fun getSubscriptions(
-        teleMgrInstances: List<Any?>?, slotMgrList: List<SlotManager?>
+        teleMgrInstances: List<Any>?,
+        slotMgrList: List<SlotManager>
     ): List<SubscriptionInfo>? {
-        val subInfos = SubscriptionManager.from(applicationContext).activeSubscriptionInfoList
+        val subInfos = SubscriptionManager.from(
+            applicationContext
+        ).activeSubscriptionInfoList
         if (teleMgrInstances != null) {
             for (teleMgr in teleMgrInstances) {
                 if (subInfos != null) {
-                    for (subinfo in subInfos) addValidReadySlots(
-                        slotMgrList.toMutableList(),
+                    for (subinfo in subInfos) SlotManager.addValidReadySlots(
+                        slotMgrList,
                         subinfo.simSlotIndex,
                         subinfo.subscriptionId,
                         teleMgr,
@@ -245,22 +241,30 @@ class MultiSimWorker @Inject constructor(
         return subInfos
     }
 
-    private fun listTeleMgrs(slotMgrList: List<SlotManager?>): List<Any?> {
-        if (validClassNames == null || validClassNames!!.isEmpty()) validClassNames = ArrayList(
-            listOf(*POSS_CLASS_NAMES)
-        )
-        val teleMgrList: MutableList<Any?> = ArrayList()
+    private fun listTeleMgrs(slotMgrList: List<SlotManager>): List<Any?> {
+        if (validClassNames == null || validClassNames!!.isEmpty()) validClassNames =
+            java.util.ArrayList(
+                listOf(*POSS_CLASS_NAMES)
+            )
+        val teleMgrList: MutableList<Any> = java.util.ArrayList()
+
         for (className in POSS_CLASS_NAMES) {
             if (className == null) continue
             addMgrFromReflection(className, teleMgrList, null, slotMgrList)
             for (i in 0 until SLOT_COUNT) addMgrFromReflection(
-                className, teleMgrList, i, slotMgrList
+                className,
+                teleMgrList,
+                i,
+                slotMgrList
             )
         }
         addMgrFromSystemService(Context.TELEPHONY_SERVICE, teleMgrList, null, slotMgrList)
         addMgrFromSystemService("phone_msim", teleMgrList, null, slotMgrList)
         for (j in 0 until SLOT_COUNT) addMgrFromSystemService(
-            "phone$j", teleMgrList, j, slotMgrList
+            "phone$j",
+            teleMgrList,
+            j,
+            slotMgrList
         )
         teleMgrList.add(null)
         return teleMgrList
@@ -268,38 +272,44 @@ class MultiSimWorker @Inject constructor(
 
     private fun addMgrFromReflection(
         className: String,
-        teleMgrList: MutableList<Any?>,
+        teleMgrList: MutableList<Any>,
         slotIdx: Any?,
-        slotMgrList: List<SlotManager?>
+        slotMgrList: List<SlotManager>
     ) {
         val result = runMethodReflect(className, "getDefault", slotIdx?.let { arrayOf(it) })
         if (result != null && !teleMgrList.contains(result)) {
             teleMgrList.add(result)
-            Log.d("", "Added Mgr using className: $className, method: getDefault, and param: $slotIdx")
-            if (Build.VERSION.SDK_INT < 22) addValidReadySlots(
-                slotMgrList.toMutableList(), slotIdx, result, validClassNames
+            if (Build.VERSION.SDK_INT < 22) SlotManager.addValidReadySlots(
+                slotMgrList,
+                slotIdx,
+                result,
+                validClassNames
             )
         }
     }
 
     private fun addMgrFromSystemService(
         serviceName: String,
-        teleMgrList: MutableList<Any?>,
-        slotIdx: Any?,
-        slotMgrList: List<SlotManager?>
+        teleMgrList: MutableList<Any>,
+        slotIdx: Any,
+        slotMgrList: List<SlotManager>
     ) {
         val serv = applicationContext.getSystemService(serviceName)
         if (serv != null && !teleMgrList.contains(serv)) {
             teleMgrList.add(serv)
-            Log.d("", "Added Mgr using mContext.getSystemService('$serviceName')")
-            if (Build.VERSION.SDK_INT < 22) addValidReadySlots(
-                slotMgrList.toMutableList(), slotIdx, serv, validClassNames
+            if (Build.VERSION.SDK_INT < 22) SlotManager.addValidReadySlots(
+                slotMgrList,
+                slotIdx,
+                serv,
+                validClassNames
             )
         }
     }
 
     private fun runMethodReflect(
-        className: String, methodName: String, methodParams: Array<Any>?
+        className: String,
+        methodName: String,
+        methodParams: Array<Any>
     ): Any? {
         try {
             return runMethodReflect(null, Class.forName(className), methodName, methodParams)
@@ -307,6 +317,68 @@ class MultiSimWorker @Inject constructor(
             validClassNames!!.remove(className)
         }
         return null
+    }
+
+    private fun runMethodReflect(
+        actualInstance: Any,
+        methodName: String,
+        methodParams: Array<Any>
+    ): Any? {
+        return runMethodReflect(actualInstance, actualInstance.javaClass, methodName, methodParams)
+    }
+
+    fun runMethodReflect(
+        actualInstance: Any?,
+        classInstance: Class<*>,
+        methodName: String,
+        methodParams: Array<Any>
+    ): Any? {
+        var result: Any? = null
+        try {
+            val method = classInstance.getDeclaredMethod(
+                methodName, *getClassParams(methodParams)
+            )
+            val accessible = method.isAccessible
+            method.isAccessible = true
+            result = method.invoke(actualInstance ?: classInstance, *methodParams)
+            method.isAccessible = accessible
+        } catch (ignored: java.lang.Exception) {
+        }
+        return result
+    }
+
+    private fun runFieldReflect(className: String, field: String): Any? {
+        var result: Any? = null
+        try {
+            val classInstance = Class.forName(className)
+            val fieldReflect = classInstance.getField(field)
+            val accessible = fieldReflect.isAccessible
+            fieldReflect.isAccessible = true
+            result = fieldReflect[null]?.toString()
+            fieldReflect.isAccessible = accessible
+        } catch (ignored: java.lang.Exception) {
+        }
+        return result
+    }
+
+    private fun getClassParams(methodParams: Array<Any>?): Array<Class<*>?>? {
+        var classesParams: Array<Class<*>?>? = null
+        if (methodParams != null) {
+            classesParams = arrayOfNulls<Class<*>?>(methodParams.size)
+            for (i in methodParams.indices) {
+                if (methodParams[i] is Int) classesParams[i] =
+                    Int::class.javaPrimitiveType // logString += methodParams[i] + ",";
+                else if (methodParams[i] is String) classesParams[i] =
+                    String::class.java // logString += "\"" + methodParams[i] + "\",";
+                else if (methodParams[i] is Long) classesParams[i] =
+                    Long::class.javaPrimitiveType // logString += methodParams[i] + ",";
+                else if (methodParams[i] is Boolean) classesParams[i] =
+                    Boolean::class.javaPrimitiveType // logString += methodParams[i] + ",";
+                else classesParams[i] =
+                    methodParams[i].javaClass // logString += "["+methodParams[i]+"]" + ",";
+            }
+        }
+        return classesParams
     }
 
     private fun registerSimStateReceiver() {
@@ -321,24 +393,27 @@ class MultiSimWorker @Inject constructor(
         }
     }
 
-    private inner class SimStateListener : PhoneStateListener() {
+    private class SimStateListener : PhoneStateListener() {
         override fun onServiceStateChanged(serviceState: ServiceState) {
             updateSimInfo()
         }
     }
 
-    private inner class SimStateReceiver : BroadcastReceiver() {
+    private class SimStateReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             updateSimInfo()
         }
     }
 
+    fun action(c: Context?): String {
+        return Utils.getPackage(c!!) + "." + NEW_SIM_INFO
+    }
+
     override fun onStopped() {
         super.onStopped()
         try {
-            (applicationContext.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager).listen(
-                simStateListener, PhoneStateListener.LISTEN_NONE
-            )
+            (applicationContext.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager)
+                .listen(simStateListener, PhoneStateListener.LISTEN_NONE)
             simStateListener = null
             if (simStateReceiver != null) applicationContext.unregisterReceiver(simStateReceiver)
             simStateReceiver = null
@@ -346,123 +421,4 @@ class MultiSimWorker @Inject constructor(
         }
     }
 
-    private fun goFish() {
-        printAllMethodsAndFields("android.telephony.TelephonyManager", -1) // all methods
-        printAllMethodsAndFields("android.telephony.MultiSimTelephonyService", -1) // all methods
-        printAllMethodsAndFields("android.telephony.MSimTelephonyManager", -1) // all methods
-        printAllMethodsAndFields("com.mediatek.telephony.TelephonyManager", -1) // all methods
-        printAllMethodsAndFields("com.mediatek.telephony.TelephonyManagerEx", -1) // all methods
-        printAllMethodsAndFields("com.android.internal.telephony.ITelephony", -1) // all methods
-        printAllMethodsAndFields(
-            "com.android.internal.telephony.ITelephony\$Stub\$Proxy", -1
-        ) // all methods
-    }
-
-    private fun printAllMethodsAndFields(className: String, paramsCount: Int) {
-        try {
-            val multiSimClass = Class.forName(className)
-            for (method in multiSimClass.methods) {
-                Log.d("", method.toGenericString())
-                try {
-                    if (method.parameterTypes.isEmpty()) {
-                        Log.d("", (runMethodReflect(multiSimClass, method.name, null) as String?).toString())
-                    } else if (method.parameterTypes.size == 1) {
-                        Log.d(" ",  runMethodReflect(multiSimClass, method.name, arrayOf(0)).toString())
-                    }
-                } catch (e: Exception) {
-                    Log.e("Failed", e.localizedMessage.toString())
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("Failed", e.localizedMessage.toString())
-        }
-    }
-
-    companion object {
-        const val TAG = "MultiSimTeleMgr"
-        private const val NEW_SIM_INFO = "NEW_SIM_INFO_ACTION"
-        const val SLOT_COUNT = 3 // Need to check 0, 1, and 2. Some phones index from 1.
-        fun makeToil(): PeriodicWorkRequest {
-            return PeriodicWorkRequest.Builder(MultiSimWorker::class.java, 15, TimeUnit.MINUTES)
-                .build()
-        }
-
-        fun makeWork(): OneTimeWorkRequest {
-            return OneTimeWorkRequest.Builder(MultiSimWorker::class.java).build()
-        }
-
-        private fun runMethodReflect(
-            actualInstance: Any, methodName: String, methodParams: Array<Any>?
-        ): Any? {
-            return runMethodReflect(
-                actualInstance, actualInstance.javaClass, methodName, methodParams
-            )
-        }
-
-        fun runMethodReflect(
-            actualInstance: Any?,
-            classInstance: Class<*>,
-            methodName: String?,
-            methodParams: Array<Any>?
-        ): Any? {
-            var result: Any? = null
-            try {
-                val method = methodName?.let {
-                    classInstance.getDeclaredMethod(
-                        it, *getClassParams(methodParams)
-                    )
-                }
-                val accessible = method?.isAccessible
-                if (method != null) {
-                    method.isAccessible = true
-                }
-                if (method != null) {
-                    result = method.invoke(actualInstance ?: classInstance, *methodParams)
-                }
-                if (accessible != null) {
-                    method.isAccessible = accessible
-                }
-            } catch (ignored: Exception) { /* Log("Method not found: " + ignored); */
-            }
-            return result
-        }
-
-        private fun runFieldReflect(className: String, field: String): Any? {
-            var result: Any? = null
-            try {
-                val classInstance = Class.forName(className)
-                val fieldReflect = classInstance.getField(field)
-                val accessible = fieldReflect.isAccessible
-                fieldReflect.isAccessible = true
-                result = fieldReflect[null]?.toString()
-                fieldReflect.isAccessible = accessible
-            } catch (ignored: Exception) {
-            }
-            return result
-        }
-
-        private fun getClassParams(methodParams: Array<Any>?): Array<Class<*>?>? {
-            var classesParams: Array<Class<*>?>? = null
-            if (methodParams != null) {
-                classesParams = arrayOfNulls<Class<*>?>(methodParams.size)
-                for (i in methodParams.indices) {
-                    if (methodParams[i] is Int) classesParams[i] =
-                        Int::class.javaPrimitiveType // logString += methodParams[i] + ",";
-                    else if (methodParams[i] is String) classesParams[i] =
-                        String::class.java // logString += "\"" + methodParams[i] + "\",";
-                    else if (methodParams[i] is Long) classesParams[i] =
-                        Long::class.javaPrimitiveType // logString += methodParams[i] + ",";
-                    else if (methodParams[i] is Boolean) classesParams[i] =
-                        Boolean::class.javaPrimitiveType // logString += methodParams[i] + ",";
-                    else classesParams[i] =
-                        methodParams[i].javaClass // logString += "["+methodParams[i]+"]" + ",";
-                }
-            }
-            return classesParams
-        }
-
-        fun action(c: Context?): String {
-            return getPackage(c!!) + "." + NEW_SIM_INFO
-        }
-    }
 }
