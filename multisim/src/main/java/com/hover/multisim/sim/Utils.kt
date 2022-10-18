@@ -21,6 +21,7 @@ object Utils {
         }
     }
 
+    /* ktlint-disable max-line-length */
     @JvmStatic
     fun hasPhonePerm(context: Context): Boolean {
         return Build.VERSION.SDK_INT < 23 || context.checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED && context.checkSelfPermission(

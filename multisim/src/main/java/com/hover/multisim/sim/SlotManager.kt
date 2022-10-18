@@ -6,71 +6,52 @@ import io.sentry.Sentry
 class SlotManager(
     slotIdx: Int,
     subscriptionId: Int,
-    teleMgr: Any?,
-    teleClass: Class<*>?,
+    private var teleMgr: Any?,
+    private var teleClass: Class<*>?,
     simState: Int,
-    imei: String?,
+    private var imei: String?,
     iccId: String?
 ) {
 
     private var slotIndex: Int? = slotIdx
     private var subscriptionId: Int? = subscriptionId
-    private var imei: String? = imei
-    private var teleMgr: Any? = teleMgr
-    private var teleClass: Class<*>? = teleClass
 
     private val METHOD_SUFFIXES = arrayOf(
         "", "Gemini", "Ext", "Ds", "ForSubscription", "ForPhone"
     )
 
-    operator fun getValue(methodName: String, subscriptionId: Any): Any? {
-        return getValue(methodName, subscriptionId as Int, teleMgr, teleClass)
-    }
+    operator fun getValue(methodName: String, subscriptionId: Any): Any? =
+        getValue(methodName, subscriptionId as Int, teleMgr, teleClass)
 
-    fun findSimState(): Int? {
-        return getValue("getSimState", slotIndex!!) as Int?
-    }
+    fun findSimState(): Int? = slotIndex?.let { getValue("getSimState", it) } as Int?
 
-    fun findIccId(): String? {
-        return getValue("getSimSerialNumber", subscriptionId!!) as String?
-    }
+    fun findIccId(): String? = subscriptionId?.let { getValue("getSimSerialNumber", it) } as String?
 
-    fun findImsi(): String? {
-        return getValue("getSubscriberId", subscriptionId!!) as String?
-    }
+    fun findImsi(): String? = subscriptionId?.let { getValue("getSubscriberId", it) } as String?
 
-    fun findOperator(): String? {
-        return getValue("getSimOperator", subscriptionId!!) as String?
-    }
+    fun findOperator(): String? = subscriptionId?.let { getValue("getSimOperator", it) } as String?
 
-    fun findOperatorName(): String? {
-        return getValue("getSimOperatorName", subscriptionId!!) as String?
-    }
+    fun findOperatorName(): String? =
+        subscriptionId?.let { getValue("getSimOperatorName", it) } as String?
 
-    fun findCountryIso(): String? {
-        return getValue("getSimCountryIso", subscriptionId!!) as String?
-    }
+    fun findCountryIso(): String? =
+        subscriptionId?.let { getValue("getSimCountryIso", it) } as String?
 
-    fun findNetworkOperator(): String? {
-        return getValue("getNetworkOperator", subscriptionId!!) as String?
-    }
+    fun findNetworkOperator(): String? =
+        subscriptionId?.let { getValue("getNetworkOperator", it) } as String?
 
-    fun findNetworkOperatorName(): String? {
-        return getValue("getNetworkOperatorName", subscriptionId!!) as String?
-    }
+    fun findNetworkOperatorName(): String? =
+        subscriptionId?.let { getValue("getNetworkOperatorName", it) } as String?
 
-    fun findNetworkCountryIso(): String? {
-        return getValue("getNetworkCountryIso", subscriptionId!!) as String?
-    }
+    fun findNetworkCountryIso(): String? =
+        subscriptionId?.let { getValue("getNetworkCountryIso", it) } as String?
 
-    fun findNetworkType(): Int? {
-        return getValue("getNetworkType", subscriptionId!!) as Int?
-    }
+    fun findNetworkType(): Int? = subscriptionId?.let { getValue("getNetworkType", it) } as Int?
 
-    fun findNetworkRoaming(): Boolean {
-        return getValue("isNetworkRoaming", subscriptionId!!) as Boolean
-    }
+    fun findNetworkRoaming(): Boolean =
+        subscriptionId?.let { getValue("isNetworkRoaming", it) } as Boolean
 
+    /* ktlint-disable max-line-length */
     private fun isUnique(slotMgrList: List<SlotManager>): Boolean {
         for (mgr in slotMgrList) {
             try {
@@ -95,6 +76,7 @@ class SlotManager(
         )
     }
 
+    /* ktlint-disable max-line-length */
     private fun addValidReadySlots(
         slotMgrList: List<SlotManager>,
         slotIdx: Int,
@@ -106,7 +88,8 @@ class SlotManager(
             return
         }
         for (className in validClassNames) if (teleMgrInstance != null || className != null) {
-            val sm: SlotManager? = findValidReadySlot(slotIdx, subscriptionId, teleMgrInstance, className)
+            val sm: SlotManager? =
+                findValidReadySlot(slotIdx, subscriptionId, teleMgrInstance, className)
             if (sm != null) {
                 if (slotMgrList.isEmpty() || sm.isUnique(slotMgrList)) {
                     slotMgrList + sm
@@ -116,10 +99,7 @@ class SlotManager(
     }
 
     private fun findValidReadySlot(
-        slotIdx: Int,
-        subscriptionId: Int,
-        teleMgr: Any?,
-        className: String?
+        slotIdx: Int, subscriptionId: Int, teleMgr: Any?, className: String?
     ): SlotManager? {
         val teleClass: Class<*>? = getTeleClass(teleMgr, className)
         val simState: Int? = getSimState(slotIdx, teleMgr, teleClass)
@@ -144,17 +124,11 @@ class SlotManager(
         return imei
     }
 
-    private fun getSimIccId(subscriptionId: Int, teleMgr: Any?, teleClass: Class<*>?): String? {
-        return getValue(
-            "getSimSerialNumber", subscriptionId, teleMgr, teleClass
-        ) as String?
-    }
+    private fun getSimIccId(subscriptionId: Int, teleMgr: Any?, teleClass: Class<*>?): String? =
+        getValue("getSimSerialNumber", subscriptionId, teleMgr, teleClass) as String?
 
-    fun getSimImsi(subscriptionId: Int, teleMgr: Any, teleClass: Class<*>): String? {
-        return getValue(
-            "getSubscriberId", subscriptionId, teleMgr, teleClass
-        ) as String?
-    }
+    fun getSimImsi(subscriptionId: Int, teleMgr: Any, teleClass: Class<*>): String? =
+        getValue("getSubscriberId", subscriptionId, teleMgr, teleClass) as String?
 
     private fun getTeleClass(teleMgr: Any?, className: String?): Class<*>? {
         try {
@@ -165,10 +139,7 @@ class SlotManager(
     }
 
     private fun getValue(
-        methodName: String,
-        slotIndex: Int,
-        teleMgr: Any?,
-        teleClass: Class<*>?
+        methodName: String, slotIndex: Int, teleMgr: Any?, teleClass: Class<*>?
     ): Any? {
         var result: Any? = spamTeleMgr(methodName, teleMgr, teleClass, slotIndex)
         if (result == null) result = spamTeleMgr(methodName, teleMgr, teleClass, null)
@@ -176,20 +147,16 @@ class SlotManager(
     }
 
     private fun spamTeleMgr(
-        methodName: String?,
-        teleMgr: Any?,
-        teleClass: Class<*>?,
-        subscriptionId: Any?
+        methodName: String?, teleMgr: Any?, teleClass: Class<*>?, subscriptionId: Any?
     ): Any? {
         if (methodName == null || methodName.isEmpty()) return null
         var result: Any?
         for (methodSuffix in METHOD_SUFFIXES) {
-            result = MultiSimWorker.runMethodReflect(
-                teleMgr,
+            result = MultiSimWorker().runMethodReflect(
+//                teleMgr,
                 teleClass,
                 methodName + methodSuffix,
-                subscriptionId?.let { arrayOf(it) }
-            )
+                subscriptionId?.let { arrayOf(it) })
             if (result != null) {
                 return result
             }

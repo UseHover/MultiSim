@@ -20,7 +20,6 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.appmattus.kotlinfixture.kotlinFixture
 import com.hover.multisim.data.database.Database
-import com.hover.multisim.data.database.dao.SimDao
 import com.hover.multisim.data.database.model.HSDKSims
 import java.io.IOException
 import kotlinx.coroutines.flow.first

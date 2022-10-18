@@ -20,8 +20,21 @@ data class SimInfo(
 ) {
 
     fun isMncMatch(mncInt: Int): Boolean {
-        return imsi.length == 4 && imsi.substring(3).toInt() == mncInt ||
-            imsi.length >= 5 && imsi.substring(3, 5).toInt() == mncInt ||
-            imsi.length >= 6 && imsi.substring(3, 6).toInt() == mncInt
+        return imsi.length == 4 && imsi.substring(3)
+            .toInt() == mncInt || imsi.length >= 5 && imsi.substring(3, 5)
+            .toInt() == mncInt || imsi.length >= 6 && imsi.substring(3, 6).toInt() == mncInt
     }
+
+    fun isNotContainedInOrHasMoved(simInfos: List<SimInfo>?): Boolean {
+        if (simInfos == null) return true
+        for (simInfo in simInfos) if (simInfo.let { this.isSameSimInSameSlot(it) }) return false
+        return true
+    }
+
+    private fun isSameSimInSameSlot(simInfo: SimInfo): Boolean =
+        isSameSim(simInfo) && simInfo.slotIdx == slotIdx
+
+    // FIXME: change so that if the SimInfo represents the same sim, the one with more/better info (and more accurate slotIdx?) is returned. It currently relies on order to do this, which is fragile
+    fun isSameSim(simInfo: SimInfo?): Boolean = simInfo?.iccId != null && iccId == simInfo.iccId
+
 }

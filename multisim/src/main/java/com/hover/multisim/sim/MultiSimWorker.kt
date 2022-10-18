@@ -13,7 +13,7 @@ import android.telephony.ServiceState
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
-import android.util.Log
+import androidx.hilt.work.HiltWorker
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.work.ListenableWorker
 import androidx.work.OneTimeWorkRequest
@@ -21,17 +21,22 @@ import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkerParameters
 import androidx.work.impl.utils.futures.SettableFuture
 import com.google.common.util.concurrent.ListenableFuture
+import dagger.assisted.Assisted
 import io.sentry.Sentry
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
+@HiltWorker
 class MultiSimWorker(
-    context: Context,
-    params: WorkerParameters,
+    @Assisted context: Context,
+    @Assisted params: WorkerParameters,
 ) : ListenableWorker(context, params) {
 
+    companion object {
+        const val SLOT_COUNT = 3 // Need to check 0, 1, and 2. Some phones index from 1.
+    }
+
     private val NEW_SIM_INFO = "NEW_SIM_INFO_ACTION"
-    val SLOT_COUNT = 3 // Need to check 0, 1, and 2. Some phones index from 1.
 
     private lateinit var workerFuture: SettableFuture<Result>
     private var result: Result? = null
@@ -72,17 +77,17 @@ class MultiSimWorker(
         return workerFuture
     }
 
+    /* ktlint-disable max-line-length */
     @SuppressLint("RestrictedApi")
     private fun startListeners() {
         try {
             registerSimStateReceiver()
             if (simStateListener == null) simStateListener = SimStateListener()
             // TelephonyManager.listen() must take place on the main thread
-            (applicationContext.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager)
-                .listen(
-                    simStateListener,
-                    PhoneStateListener.LISTEN_SERVICE_STATE or PhoneStateListener.LISTEN_SIGNAL_STRENGTHS
-                )
+            (applicationContext.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager).listen(
+                simStateListener,
+                PhoneStateListener.LISTEN_SERVICE_STATE or PhoneStateListener.LISTEN_SIGNAL_STRENGTHS
+            )
         } catch (e: java.lang.Exception) {
             workerFuture.set(Result.retry())
         }
@@ -116,7 +121,7 @@ class MultiSimWorker(
         }
     }
 
-    private fun compareNewAndOld(newList: List<SimInfo?>, oldList: List<SimInfo?>?) {
+    private fun compareNewAndOld(newList: List<SimInfo>, oldList: List<SimInfo>?) {
         if (oldList == null || oldList.size != newList.size) {
             onSimInfoUpdate(newList)
         } else {
@@ -169,8 +174,8 @@ class MultiSimWorker(
 
     @Synchronized
     @SuppressWarnings("MissingPermission")
-    private fun findUniqueSimInfo(): List<SimInfo?>? {
-        var newList: List<SimInfo?> = java.util.ArrayList()
+    private fun findUniqueSimInfo(): List<SimInfo?> {
+        var newList: List<SimInfo> = java.util.ArrayList()
         try {
             slotSemaphore.acquire()
             val slotMgrList: List<SlotManager> = java.util.ArrayList()
@@ -178,11 +183,9 @@ class MultiSimWorker(
             var subInfos: List<SubscriptionInfo?>? = java.util.ArrayList()
             if (Build.VERSION.SDK_INT >= 22) subInfos =
                 getSubscriptions(teleMgrInstances, slotMgrList)
-            newList =
-                if (subInfos != null && subInfos.isNotEmpty()) createUniqueSimInfoList(
-                    subInfos,
-                    slotMgrList
-                ) else createUniqueSimInfoList(slotMgrList)
+            newList = if (subInfos != null && subInfos.isNotEmpty()) createUniqueSimInfoList(
+                subInfos, slotMgrList
+            ) else createUniqueSimInfoList(slotMgrList)
         } catch (e: java.lang.Exception) {
             Sentry.captureException(e)
         } finally {
@@ -192,8 +195,7 @@ class MultiSimWorker(
     }
 
     private fun createUniqueSimInfoList(
-        subInfos: List<SubscriptionInfo>,
-        slotMgrList: List<SlotManager>
+        subInfos: List<SubscriptionInfo>, slotMgrList: List<SlotManager>
     ): List<SimInfo> {
         val newList = createUniqueSimInfoList(slotMgrList)
         for (subInfo in subInfos) newList.add(SimInfo(subInfo, applicationContext))
@@ -217,8 +219,7 @@ class MultiSimWorker(
     @TargetApi(22)
     @SuppressWarnings("MissingPermission")
     private fun getSubscriptions(
-        teleMgrInstances: List<Any>?,
-        slotMgrList: List<SlotManager>
+        teleMgrInstances: List<Any>?, slotMgrList: List<SlotManager>
     ): List<SubscriptionInfo>? {
         val subInfos = SubscriptionManager.from(
             applicationContext
@@ -250,19 +251,13 @@ class MultiSimWorker(
             if (className == null) continue
             addMgrFromReflection(className, teleMgrList, null, slotMgrList)
             for (i in 0 until SLOT_COUNT) addMgrFromReflection(
-                className,
-                teleMgrList,
-                i,
-                slotMgrList
+                className, teleMgrList, i, slotMgrList
             )
         }
         addMgrFromSystemService(Context.TELEPHONY_SERVICE, teleMgrList, null, slotMgrList)
         addMgrFromSystemService("phone_msim", teleMgrList, null, slotMgrList)
         for (j in 0 until SLOT_COUNT) addMgrFromSystemService(
-            "phone$j",
-            teleMgrList,
-            j,
-            slotMgrList
+            "phone$j", teleMgrList, j, slotMgrList
         )
         teleMgrList.add(null)
         return teleMgrList
@@ -278,10 +273,7 @@ class MultiSimWorker(
         if (result != null && !teleMgrList.contains(result)) {
             teleMgrList.add(result)
             if (Build.VERSION.SDK_INT < 22) SlotManager.addValidReadySlots(
-                slotMgrList,
-                slotIdx,
-                result,
-                validClassNames
+                slotMgrList, slotIdx, result, validClassNames
             )
         }
     }
@@ -296,40 +288,19 @@ class MultiSimWorker(
         if (serv != null && !teleMgrList.contains(serv)) {
             teleMgrList.add(serv)
             if (Build.VERSION.SDK_INT < 22) SlotManager.addValidReadySlots(
-                slotMgrList,
-                slotIdx,
-                serv,
-                validClassNames
+                slotMgrList, slotIdx, serv, validClassNames
             )
         }
     }
 
     private fun runMethodReflect(
-        className: String,
-        methodName: String,
-        methodParams: Array<Any>
-    ): Any? {
-        try {
-            return runMethodReflect(null, Class.forName(className), methodName, methodParams)
-        } catch (e: ClassNotFoundException) {
-            validClassNames!!.remove(className)
-        }
-        return null
-    }
-
-    private fun runMethodReflect(
-        actualInstance: Any,
-        methodName: String,
-        methodParams: Array<Any>
+        actualInstance: Any, methodName: String, methodParams: Array<Any>
     ): Any? {
         return runMethodReflect(actualInstance, actualInstance.javaClass, methodName, methodParams)
     }
 
     private fun runMethodReflect(
-        actualInstance: Any?,
-        classInstance: Class<*>,
-        methodName: String,
-        methodParams: Array<Any>
+        actualInstance: Any?, classInstance: Class<*>, methodName: String, methodParams: Array<Any>
     ): Any? {
         var result: Any? = null
         try {
@@ -343,6 +314,17 @@ class MultiSimWorker(
         } catch (ignored: java.lang.Exception) {
         }
         return result
+    }
+
+    fun runMethodReflect(
+        className: String, methodName: String, methodParams: Array<Any>
+    ): Any? {
+        try {
+            return runMethodReflect(null, Class.forName(className), methodName, methodParams)
+        } catch (e: ClassNotFoundException) {
+            validClassNames!!.remove(className)
+        }
+        return null
     }
 
     private fun runFieldReflect(className: String, field: String): Any? {
@@ -406,13 +388,13 @@ class MultiSimWorker(
     override fun onStopped() {
         super.onStopped()
         try {
-            (applicationContext.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager)
-                .listen(simStateListener, PhoneStateListener.LISTEN_NONE)
+            (applicationContext.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager).listen(
+                simStateListener, PhoneStateListener.LISTEN_NONE
+            )
             simStateListener = null
             if (simStateReceiver != null) applicationContext.unregisterReceiver(simStateReceiver)
             simStateReceiver = null
         } catch (ignored: Exception) {
         }
     }
-
 }
