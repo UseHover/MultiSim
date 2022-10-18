@@ -13,25 +13,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.hover.multisim.db.dao
+package com.hover.multisim.data.database.dao
 
 import androidx.room.Dao
 import androidx.room.Query
-import com.hover.multisim.db.model.HSDKSims
+import com.hover.multisim.data.database.model.HSDKSims
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface SimDao : BaseDao<HSDKSims> {
 
     @Query("SELECT * FROM hsdk_sims")
-    fun getAll(): Flow<List<HSDKSims>> // return SimInfo
+    fun getAllSims(): Flow<List<HSDKSims>> // return SimInfo
 
     @Query("SELECT * FROM hsdk_sims WHERE mcc =:mcc AND slot_idx != -1")
-    fun getPresent(mcc: String): Flow<List<HSDKSims>> // return SimInfo
+    fun getPresentSims(mcc: String): Flow<List<HSDKSims>> // return SimInfo
 
     @Query("SELECT * FROM hsdk_sims WHERE slot_idx =:slotIdx LIMIT 1")
-    suspend fun get(slotIdx: Int): HSDKSims // return SimInfo
+    suspend fun getSim(slotIdx: Int): HSDKSims // return SimInfo
 
     @Query("SELECT * FROM hsdk_sims WHERE iccId =:iccId LIMIT 1")
-    suspend fun loadBy(iccId: String): HSDKSims // return SimInfo
+    suspend fun loadBySim(iccId: String): HSDKSims // return SimInfo
 }

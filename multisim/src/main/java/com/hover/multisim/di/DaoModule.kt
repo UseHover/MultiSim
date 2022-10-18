@@ -15,8 +15,8 @@
  */
 package com.hover.multisim.di
 
-import com.hover.multisim.db.Database
-import com.hover.multisim.db.dao.SimDao
+import com.hover.multisim.data.database.Database
+import com.hover.multisim.data.database.dao.SimDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn

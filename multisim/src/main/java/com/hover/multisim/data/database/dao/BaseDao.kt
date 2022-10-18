@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.hover.multisim.db.dao
+package com.hover.multisim.data.database.dao
 
 import androidx.room.Delete
 import androidx.room.Insert

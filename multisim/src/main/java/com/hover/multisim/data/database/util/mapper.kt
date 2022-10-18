@@ -1,6 +1,6 @@
 package com.hover.multisim.sim
 
-import com.hover.multisim.db.model.HSDKSims
+import com.hover.multisim.data.database.model.HSDKSims
 
 fun HSDKSims.toSimInfo() = SimInfo(
     slotIdx = this.slot_idx,

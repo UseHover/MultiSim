@@ -17,7 +17,7 @@ package com.hover.multisim.di
 
 import android.content.Context
 import androidx.room.Room
-import com.hover.multisim.db.Database
+import com.hover.multisim.data.database.Database
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn

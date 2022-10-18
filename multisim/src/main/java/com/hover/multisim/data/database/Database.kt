@@ -13,12 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.hover.multisim.db
+package com.hover.multisim.data.database
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
-import com.hover.multisim.db.dao.SimDao
-import com.hover.multisim.db.model.HSDKSims
+import com.hover.multisim.data.database.dao.SimDao
+import com.hover.multisim.data.database.model.HSDKSims
 
 @Database(
     entities = [

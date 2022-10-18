@@ -13,14 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.hover.multisim.db.dao
+package com.hover.multisim.data.database.dao
 
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.appmattus.kotlinfixture.kotlinFixture
-import com.hover.multisim.db.Database
-import com.hover.multisim.db.model.HSDKSims
+import com.hover.multisim.data.database.Database
+import com.hover.multisim.data.database.dao.SimDao
+import com.hover.multisim.data.database.model.HSDKSims
 import java.io.IOException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
