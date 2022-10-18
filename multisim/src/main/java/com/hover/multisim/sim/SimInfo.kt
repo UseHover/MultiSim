@@ -37,4 +37,9 @@ data class SimInfo(
     // FIXME: change so that if the SimInfo represents the same sim, the one with more/better info (and more accurate slotIdx?) is returned. It currently relies on order to do this, which is fragile
     fun isSameSim(simInfo: SimInfo?): Boolean = simInfo?.iccId != null && iccId == simInfo.iccId
 
+    fun isNotContainedIn(simInfos: List<SimInfo?>?): Boolean {
+        if (simInfos == null) return true
+        for (simInfo in simInfos) if (isSameSim(simInfo)) return false
+        return true
+    }
 }

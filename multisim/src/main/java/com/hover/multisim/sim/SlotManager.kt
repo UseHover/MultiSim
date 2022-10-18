@@ -151,16 +151,17 @@ class SlotManager(
     ): Any? {
         if (methodName == null || methodName.isEmpty()) return null
         var result: Any?
-        for (methodSuffix in METHOD_SUFFIXES) {
-            result = MultiSimWorker().runMethodReflect(
-//                teleMgr,
-                teleClass,
-                methodName + methodSuffix,
-                subscriptionId?.let { arrayOf(it) })
-            if (result != null) {
-                return result
-            }
-        }
+        //TODO - FIX ME
+//        for (methodSuffix in METHOD_SUFFIXES) {
+//            result = MultiSimWorker().runMethodReflect(
+////                teleMgr,
+//                teleClass,
+//                methodName + methodSuffix,
+//                subscriptionId?.let { arrayOf(it) })
+//            if (result != null) {
+//                return result
+//            }
+//        }
         return null
     }
 }

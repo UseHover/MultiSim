@@ -13,6 +13,7 @@ import android.telephony.ServiceState
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
+import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.work.ListenableWorker
@@ -26,6 +27,7 @@ import io.sentry.Sentry
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
+// TODO - Maybe rewrite this implementation somehow to simplify it?
 @HiltWorker
 class MultiSimWorker(
     @Assisted context: Context,
@@ -102,10 +104,10 @@ class MultiSimWorker(
                 if (Utils.hasPhonePerm(applicationContext)) {
                     val oldList: List<SimInfo?>? = getSaved()
                     val newList = findUniqueSimInfo()
-                    if (newList != null) {
+                    run {
                         compareNewAndOld(newList, oldList)
                         Result.success()
-                    } else Result.failure()
+                    }
                 } else Result.failure()
             } catch (e: java.lang.Exception) {
                 Sentry.captureException(e)
@@ -394,7 +396,6 @@ class MultiSimWorker(
             simStateListener = null
             if (simStateReceiver != null) applicationContext.unregisterReceiver(simStateReceiver)
             simStateReceiver = null
-        } catch (ignored: Exception) {
-        }
+        } catch (ignored: Exception) { }
     }
 }
